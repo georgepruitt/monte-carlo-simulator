@@ -16,9 +16,9 @@ Paste your trades and discover your true Risk of Ruin and Scaling potential.
 
 # --- Sidebar Inputs ---
 st.sidebar.header("Simulation Controls")
-base_equity = st.sidebar.number_input("Base Start Equity ($)", value=10000, step=1000)
-ruin_level = st.sidebar.number_input("Margin/Ruin Level ($)", value=3000, step=500)
-n_trades = st.sidebar.number_input("Trades per Year", value=439, step=1)
+base_equity = st.sidebar.number_input("Base Start Equity ($)", value=25000, step=1000)
+ruin_level = st.sidebar.number_input("Margin/Ruin Level ($)", value=5000, step=500)
+n_trades = st.sidebar.number_input("Trades per Year", value=75, step=1)
 
 st.sidebar.markdown("---")
 raw_text = st.sidebar.text_area("Paste Trades (Column of P/L)", height=300, help="Paste a list of trade profits/losses. Symbols and headers are ignored.")
