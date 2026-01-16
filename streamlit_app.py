@@ -4,10 +4,11 @@ import pandas as pd
 import re
 import matplotlib.pyplot as plt
 
-# --- Page Config ---
-st.set_page_config(page_title="Trading Flight Simulator", layout="wide")
+# --- Page Config (This sets the browser tab title) ---
+st.set_page_config(page_title="Monte Carlo Trade Flight Simulator", layout="wide")
 
-st.title("🚀 Trading Flight Simulator")
+# --- Main Page Title ---
+st.title("🚀 Monte Carlo Trade Flight Simulator")
 st.markdown("""
 This tool uses **Monte Carlo Simulation** to stress-test your trading strategy. 
 Paste your trades and discover your true Risk of Ruin and Scaling potential.
@@ -80,11 +81,11 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             
             progress_bar.progress((step + 1) / 11)
 
+            # --- Calculations for Display ---
             med_p, m_dd = np.median(profits), np.median(dds)
-            med_ret_pct = (med_p / current_start) * 100
             worst_case = np.percentile(profits, 1)
+            med_ret_pct = (med_p / current_start) * 100
             
-            # Updated to use clearer, "pseudo-stacked" column names
             table_data.append({
                 "Start Equity": f"${current_start:,.0f}",
                 "Risk of Ruin %": f"{int(ruins/10)}%",
@@ -94,12 +95,15 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                 "Efficiency (Ret/DD)": round((med_p/current_start)/m_dd, 2) if m_dd > 0 else 0,
                 "Prob > 0": f"{int(sum(1 for p in profits if p > 0)/10)}%"
             })
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Results as CSV", data=csv, file_name="flight_results.csv", mime="text/csv")
+
         # --- Display Table ---
         st.subheader("📊 Risk & Scaling Analysis")
         df = pd.DataFrame(table_data)
         st.table(df)
+        
+        # --- Download Button ---
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Results as CSV", data=csv, file_name="flight_results.csv", mime="text/csv")
 
         # --- Charts ---
         col1, col2 = st.columns(2)
