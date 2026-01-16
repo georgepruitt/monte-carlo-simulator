@@ -139,3 +139,39 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
 
 else:
     st.info("👈 Enter your parameters and paste your trades in the sidebar, then click 'Run Flight Simulator'.")
+
+# --- Documentation Section ---
+st.markdown("---")
+st.header("📖 How to Interpret Your Flight Results")
+
+with st.expander("🔍 Understanding the Metrics"):
+    st.markdown("""
+    ### **The Risk of Ruin %**
+    This is the most critical number. It represents the percentage of simulations that hit your **'Margin/Ruin Level'** at any point during the year. 
+    * **Quant Tip:** If this is above 5%, you are likely over-leveraged for your current account size.
+    
+    ### **Median Drawdown**
+    The 'middle' drawdown experienced across 1,000 lives. While your strategy might have a historical drawdown of 15%, the Monte Carlo might show a median of 22%. This is the 'Reality Gap'—preparing you for the sequence of trades you *haven't* seen yet.
+    
+    ### **Worst Case (1st Percentile)**
+    This shows the profit/loss of the unluckiest 1% of simulated years. If your 'Worst Case' is -$20,000 and your Start Equity is only $15,000, the math says you have a structural risk of total loss.
+    
+    ### **Efficiency (Ret/DD Ratio)**
+    Also known as the **MAR Ratio**. This measures your return per unit of pain. 
+    * **> 1.0:** Excellent. You are making more than the risk you are taking.
+    * **< 0.5:** High friction. You are enduring a lot of 'pain' for every dollar of 'gain.'
+    """)
+
+with st.expander("📈 Reading the Visuals"):
+    st.markdown("""
+    ### **The 'Broom' Chart (The Journey)**
+    The dark blue line is your **Median Path**. The shaded area is the **90% Confidence Interval**. If the bottom of that shaded area touches your red Ruin line, your strategy is 'flying too low to the ground.'
+    
+    ### **The Destination (Histogram)**
+    This shows the distribution of ending balances. A 'fat' tail to the left means your strategy has 'Left Tail Risk' (large, infrequent losses). A 'tight' cluster means your results are highly predictable.
+    """)
+
+st.sidebar.markdown("---")
+st.sidebar.caption("""
+**Disclaimer:** This simulator is for educational purposes only. Past performance (the trades you paste) is not a guarantee of future results. Monte Carlo analysis is a mathematical model and cannot account for 'Black Swan' events or changes in market regime.
+""")
