@@ -83,17 +83,18 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             med_p, m_dd = np.median(profits), np.median(dds)
             worst_case = np.percentile(profits, 1)
             
+            # Updated to use clearer, "pseudo-stacked" column names
             table_data.append({
                 "Start Equity": f"${current_start:,.0f}",
-                "Risk of Ruin": f"{int(ruins/10)}%",
-                "Med Drawdown": f"{m_dd*100:.1f}%",
-                "Med $ Profit": f"${med_p:,.0f}",
-                "Med Return %": f"{int((med_p/current_start)*100)}%",
-                "Worst Case (1%)": f"${worst_case:,.0f}",
-                "Ret/DD": round((med_p/current_start)/m_dd, 2) if m_dd > 0 else 0,
+                "Risk of Ruin %": f"{int(ruins/10)}%",
+                "Median Drawdown": f"{m_dd*100:.1f}%",
+                "Median Profit ($ / % Return)": f"${med_p:,.0f} / {int(med_ret_pct)}%",
+                "Worst Case (1st %-tile)": f"${worst_case:,.0f}",
+                "Efficiency (Ret/DD)": round((med_p/current_start)/m_dd, 2) if m_dd > 0 else 0,
                 "Prob > 0": f"{int(sum(1 for p in profits if p > 0)/10)}%"
             })
-
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Results as CSV", data=csv, file_name="flight_results.csv", mime="text/csv")
         # --- Display Table ---
         st.subheader("📊 Risk & Scaling Analysis")
         df = pd.DataFrame(table_data)
