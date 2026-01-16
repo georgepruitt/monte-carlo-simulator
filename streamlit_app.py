@@ -81,6 +81,7 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             progress_bar.progress((step + 1) / 11)
 
             med_p, m_dd = np.median(profits), np.median(dds)
+            med_ret_pct = (med_p / current_start) * 100
             worst_case = np.percentile(profits, 1)
             
             # Updated to use clearer, "pseudo-stacked" column names
