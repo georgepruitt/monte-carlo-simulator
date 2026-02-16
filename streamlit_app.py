@@ -218,9 +218,13 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
         min_t = float(min(trades))
         max_t = float(max(trades))
         med_t = float(np.median(trades))
+        avg_t = float(np.mean(trades))
+        sum_t = float(np.sum(trades))
+        sum_pct_start = (sum_t / float(base_equity)) * 100 if float(base_equity) != 0 else 0.0
 
         st.caption(
             f"Parsed trades: {len(trades)}  |  Winners: {pos_ct}  Losers: {neg_ct}  Zeros: {zero_ct}  |  "
+            f"Avg trade: ${avg_t:,.2f}  |  Sum P/L: ${sum_t:,.2f} ({sum_pct_start:.1f}% of start)  |  "
             f"Median trade: ${med_t:,.2f}  |  Worst trade: ${min_t:,.2f}  Best trade: ${max_t:,.2f}"
         )
         if neg_ct == 0:
@@ -348,6 +352,11 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             ax2.set_xlabel("Ending Balance ($)")
             ax2.legend()
             st.pyplot(fig2)
+            st.caption(
+                "If this histogram sits far to the right of break-even, it usually means your trade distribution has "
+                "strong positive skew (many capped losses with occasional large wins). The Monte Carlo is still accurate "
+                "for the pasted trades — it’s assuming that edge persists unchanged."
+            )
 
         st.subheader("⚖️ Efficiency Cloud (Pain vs. Gain)")
         fig3, ax3 = plt.subplots(figsize=(10, 4))
