@@ -83,7 +83,13 @@ def clean_data(text: str) -> list[float]:
     cleaned: list[float] = []
 
     for line in (text or "").splitlines():
-        if not line.strip():
+        s = line.strip()
+        if not s:
+            continue
+
+        # If the line is just an integer (common when copying a Trade # column), skip it.
+        # This directly prevents the "454 trades becomes 908" problem.
+        if s.isdigit():
             continue
 
         # Fast header skip
