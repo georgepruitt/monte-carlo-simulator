@@ -55,7 +55,7 @@ def _parse_mmddyyyy(s: str):
 start_date = _parse_mmddyyyy(start_date_text)
 end_date = _parse_mmddyyyy(end_date_text)
 
-period_years = 0.0
+period_years: float | None = 0.0
 _date_error = False
 if start_date_text.strip() or end_date_text.strip():
     if start_date is None:
@@ -69,9 +69,18 @@ if (start_date is not None) and (end_date is not None) and not _date_error:
     if end_date < start_date:
         st.sidebar.error("Last trade date must be on/after the first trade date.")
         _date_error = True
+        period_years = None
     else:
         days = (end_date - start_date).days
-        period_years = (days / 365.25) if days >= 1 else 0.0
+        period_years = (days / 365.25) if days >= 1 else None
+
+# Show what we parsed (prevents silent em-dashes)
+if start_date_text.strip() or end_date_text.strip():
+    st.sidebar.caption(
+        f"Parsed dates → start: {start_date if start_date else 'INVALID'} | "
+        f"end: {end_date if end_date else 'INVALID'} | "
+        f"years: {f'{period_years:.2f}' if isinstance(period_years, float) else '—'}"
+    )
 
 # Optional manual override (rare): if your trade list spans gaps or you prefer a fixed period.
 period_years_override = st.sidebar.number_input(
@@ -198,7 +207,7 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
     else:
         n_trades = int(len(trades))
         msg = f"Detected {n_trades} trades (simulation length = {n_trades})."
-        if period_years and period_years > 0:
+        if isinstance(period_years, float) and period_years > 0:
             msg += f"  Date span ≈ {period_years:.2f} years."
         st.sidebar.success(msg)
 
@@ -272,8 +281,10 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             ret_pct = (med_p / current_start) * 100
 
             # Annual return based on actual date span (if provided)
-            if period_years and period_years > 0:
+            if isinstance(period_years, float) and period_years > 0:
                 annual_return_pct = ((1.0 + (med_p / current_start)) ** (1.0 / period_years) - 1.0) * 100
+            elif (start_date_text.strip() or end_date_text.strip()) and _date_error:
+                annual_return_pct = float('nan')
             else:
                 annual_return_pct = None
 
@@ -283,7 +294,10 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                     "Risk of Ruin %": f"{int(ruins/10)}%",
                     "Median Drawdown": f"{m_dd*100:.1f}%",
                     "Median Profit ($ / % of Start)": f"${med_p:,.0f} / {ret_pct:.1f}%",
-                    "Annual Return (%/yr)": (f"{annual_return_pct:.1f}%" if annual_return_pct is not None else "—"),
+                    "Annual Return (%/yr)": (
+                        f"{annual_return_pct:.1f}%" if isinstance(annual_return_pct, float) and not np.isnan(annual_return_pct)
+                        else ("Invalid date(s)" if isinstance(annual_return_pct, float) and np.isnan(annual_return_pct) else "—")
+                    ),
                     "Worst Case (1st %-tile)": f"${worst_case:,.0f}",
                     "Efficiency (Ret/DD)": round((med_p/current_start)/m_dd, 2) if m_dd > 0 else 0,
                     "Prob > 0": f"{round(100.0 * sum(1 for p in profits if p > 0) / len(profits), 1)}%",
