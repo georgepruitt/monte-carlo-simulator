@@ -202,6 +202,24 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             msg += f"  Date span ≈ {period_years:.2f} years."
         st.sidebar.success(msg)
 
+        # --- Parse sanity check (helps users confirm negatives are being detected) ---
+        neg_ct = sum(1 for x in trades if x < 0)
+        pos_ct = sum(1 for x in trades if x > 0)
+        zero_ct = len(trades) - neg_ct - pos_ct
+        min_t = float(min(trades))
+        max_t = float(max(trades))
+        med_t = float(np.median(trades))
+
+        st.caption(
+            f"Parsed trades: {len(trades)}  |  Winners: {pos_ct}  Losers: {neg_ct}  Zeros: {zero_ct}  |  "
+            f"Median trade: ${med_t:,.2f}  |  Worst trade: ${min_t:,.2f}  Best trade: ${max_t:,.2f}"
+        )
+        if neg_ct == 0:
+            st.warning(
+                "No losing trades were detected. If your losers are formatted like ($2,000.00), "
+                "this usually means the paste did not include the losing rows (or the wrong column was pasted)."
+            )
+
         # Progress bar for web UX
         progress_bar = st.progress(0)
 
