@@ -15,9 +15,10 @@ This tool uses **Monte Carlo Simulation** to stress-test your trading strategy.
 Paste your trades and discover your true Risk of Ruin and Scaling potential.
 
 **Update:** You no longer need to know "Trades per Year". The simulator automatically uses
-**the number of trades you paste** as the simulation length (i.e., a run of *N trades*).
+**the number of trades you paste** as the simulation length (a run of *N trades*).
 
-**Note on returns:** Without a time period (years), returns are shown as **% of starting equity over N trades** (not annualized).
+**Return definition:** The “% Return” shown is **profit as a percent of starting equity over the pasted trade list**
+(i.e., over *N trades*). For convenience we treat that as a “1-year” run in the table.
 """
 )
 
@@ -26,91 +27,36 @@ st.sidebar.header("Simulation Controls")
 base_equity = st.sidebar.number_input("Base Start Equity ($)", value=25000, step=1000)
 ruin_level = st.sidebar.number_input("Margin/Ruin Level ($)", value=5000, step=500)
 
-# Optional: used only to annualize returns (CAGR).
-# Your users can copy/paste dates in this format: 11/30/2006
-st.sidebar.markdown("**Optional: Annualize using first/last trade dates**")
-col_d1, col_d2 = st.sidebar.columns(2)
-start_date_text = col_d1.text_input(
-    "First trade date (MM/DD/YYYY)",
-    value="",
-    placeholder="11/30/2006",
-)
-end_date_text = col_d2.text_input(
-    "Last trade date (MM/DD/YYYY)",
-    value="",
-    placeholder="11/30/2024",
-)
-
-def _parse_mmddyyyy(s: str):
-    s = (s or "").strip()
-    if not s:
-        return None
-    try:
-        # Accept M/D/YYYY or MM/DD/YYYY
-        from datetime import datetime
-        return datetime.strptime(s, "%m/%d/%Y").date()
-    except ValueError:
-        return None
-
-start_date = _parse_mmddyyyy(start_date_text)
-end_date = _parse_mmddyyyy(end_date_text)
-
-period_years = 0.0
-_date_error = False
-if start_date_text.strip() or end_date_text.strip():
-    if start_date is None:
-        col_d1.error("Use MM/DD/YYYY")
-        _date_error = True
-    if end_date is None:
-        col_d2.error("Use MM/DD/YYYY")
-        _date_error = True
-
-if (start_date is not None) and (end_date is not None) and not _date_error:
-    if end_date < start_date:
-        st.sidebar.error("Last trade date must be on/after the first trade date.")
-        _date_error = True
-    else:
-        days = (end_date - start_date).days
-        period_years = (days / 365.25) if days >= 1 else 0.0
-
-# Optional manual override (rare): if your trade list spans gaps or you prefer a fixed period.
-period_years_override = st.sidebar.number_input(
-    "Years (override) — optional",
-    value=0.0,
-    step=0.5,
-    help="Leave 0 to use the date range above. Set a value here only to override.",
-)
-if period_years_override and period_years_override > 0:
-    period_years = float(period_years_override)
-
 st.sidebar.markdown("---")
 raw_text = st.sidebar.text_area(
-    "Paste Trades (Column of P/L)",
+    "Paste Trades (Shares/Ctrts + Profit/Loss or just P/L)",
     height=300,
     help=(
-        "Paste a list of trade profits/losses. If your paste includes a trade number column (1, 2, 3, ...), "
-        "the simulator will ignore that and use the P/L column. Symbols and headers are ignored."
+        "Paste a list of trade profits/losses. If your paste includes a Shares/Ctrts column (often a repeated '1'), "
+        "the simulator ignores those integer-only lines and uses the Profit/Loss values. Parentheses like ($2,000.00) "
+        "are treated as negative."
     ),
 )
 
 # --- Data Parser ---
-_NUM_TOKEN = re.compile(r"\(?-?\$?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?|\(?-?\$?\d+(?:\.\d+)?\)?")
+_NUM_TOKEN = re.compile(
+    r"\(?-?\$?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?|\(?-?\$?\d+(?:\.\d+)?\)?"
+)
 
 
-def _token_to_float(tok: str) -> float | None:
+def _token_to_float(tok: str):
     """Convert a token like '(1,234.56)' or '-$1234' or '1234' into float."""
     if not tok:
         return None
 
     t = tok.strip()
 
-    # Skip headers / obvious non-values (belt + suspenders)
+    # Skip headers / obvious non-values
     tl = t.lower()
-    if any(x in tl for x in ("pnl", "trade", "amount", "profit", "loss", "symbol")):
+    if any(x in tl for x in ("pnl", "trade", "amount", "profit", "loss", "symbol", "shares", "ctrts")):
         return None
 
     is_neg = ("(" in t and ")" in t) or ("-" in t)
-    # Keep digits + decimal only
     val = re.sub(r"[^\d.]", "", t)
     if not val or val == ".":
         return None
@@ -125,19 +71,21 @@ def _token_to_float(tok: str) -> float | None:
 
 def clean_data(text: str) -> list[float]:
     """
-    Robustly extract a column of P/L values from pasted text.
+    Extract a column of P/L values from pasted text.
 
-    Handles:
-      - TradeStation exports where each row might be:  '1   $123.45'  (trade # + P/L)
-      - Parentheses negatives: '(123.45)'
-      - Commas, currency symbols
-      - Random extra columns (dates, symbols, etc.)
+    Supports common TradeStation paste format:
+        Shares/Ctrts - Profit/Loss
+        1
+        ($845.00)
+        1
+        $870.00
+        ...
 
-    Strategy:
-      - For each line, extract numeric-looking tokens.
-      - If the first token is a small integer (often a trade # like 1,2,3,...) and there is another number,
-        drop that first token.
-      - Use the **rightmost remaining numeric token** as the P/L for that line.
+    Rules:
+      - If a line is ONLY an integer ("1", "2", ...), treat it as Shares/Ctrts or an index and skip it.
+      - Otherwise, extract numeric tokens.
+      - If a line contains multiple numeric tokens, drop a leading integer index if present.
+      - Use the rightmost remaining number as the line's P/L.
     """
     cleaned: list[float] = []
 
@@ -146,21 +94,19 @@ def clean_data(text: str) -> list[float]:
         if not s:
             continue
 
-        # If the line is just an integer (common when copying a Trade # column), skip it.
-        # This directly prevents the "454 trades becomes 908" problem.
+        # Two-column paste often becomes: integer-only line, then P/L line. Skip pure integer lines.
         if s.isdigit():
             continue
 
         # Fast header skip
-        ll = line.lower()
-        if any(h in ll for h in ("p/l", "pnl", "profit", "loss", "net", "strategy", "symbol")):
+        ll = s.lower()
+        if any(h in ll for h in ("p/l", "pnl", "profit/loss", "profit", "loss", "net", "strategy", "symbol", "shares", "ctrts")):
             continue
 
-        tokens = _NUM_TOKEN.findall(line)
+        tokens = _NUM_TOKEN.findall(s)
         if not tokens:
             continue
 
-        # Convert all tokens we can
         values: list[tuple[str, float]] = []
         for tok in tokens:
             v = _token_to_float(tok)
@@ -173,17 +119,13 @@ def clean_data(text: str) -> list[float]:
         # If line looks like: trade_index + pnl (e.g., '1  250.00'), drop the index.
         if len(values) >= 2:
             first_tok, first_val = values[0]
-            # Heuristic: pure integer token, small-ish magnitude, and no sign/parentheses
             is_integer_token = re.fullmatch(r"\d+", first_tok.strip()) is not None
-            looks_like_index = is_integer_token and 0 <= first_val <= 100000
-            if looks_like_index:
-                # In particular, your prior bugbear: skip the leading '1'
+            if is_integer_token and 0 <= first_val <= 100000:
                 values = values[1:]
 
         if not values:
             continue
 
-        # Use the rightmost numeric as P/L
         cleaned.append(values[-1][1])
 
     return cleaned
@@ -197,10 +139,7 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
         st.error("Please paste some trade P/L data first!")
     else:
         n_trades = int(len(trades))
-        msg = f"Detected {n_trades} trades (simulation length = {n_trades})."
-        if period_years and period_years > 0:
-            msg += f"  Date span ≈ {period_years:.2f} years."
-        st.sidebar.success(msg)
+        st.sidebar.success(f"Detected {n_trades} trades (simulation length = {n_trades}).")
 
         # --- Parse sanity check (helps users confirm negatives are being detected) ---
         neg_ct = sum(1 for x in trades if x < 0)
@@ -209,10 +148,14 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
         min_t = float(min(trades))
         max_t = float(max(trades))
         med_t = float(np.median(trades))
+        avg_t = float(np.mean(trades))
+        sum_t = float(np.sum(trades))
+        exp_pct_of_start = (sum_t / float(base_equity)) * 100 if float(base_equity) != 0 else 0.0
 
         st.caption(
             f"Parsed trades: {len(trades)}  |  Winners: {pos_ct}  Losers: {neg_ct}  Zeros: {zero_ct}  |  "
-            f"Median trade: ${med_t:,.2f}  |  Worst trade: ${min_t:,.2f}  Best trade: ${max_t:,.2f}"
+            f"Avg trade: ${avg_t:,.2f}  |  Sum P/L: ${sum_t:,.2f} ({exp_pct_of_start:.1f}% of start)  |  "
+            f"Median trade: ${med_t:,.2f}  |  Worst: ${min_t:,.2f}  Best: ${max_t:,.2f}"
         )
         if neg_ct == 0:
             st.warning(
@@ -266,16 +209,12 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             progress_bar.progress((step + 1) / 11)
 
             # --- Calculations for Display ---
-            med_p, m_dd = np.median(profits), np.median(dds)
-            worst_case = np.percentile(profits, 1)
+            med_p = float(np.median(profits))
+            m_dd = float(np.median(dds))
+            worst_case = float(np.percentile(profits, 1))
+
             # Return over the simulation horizon (N trades)
             ret_pct = (med_p / current_start) * 100
-
-            # Optional annualization (CAGR) if the user provides a period in years
-            if period_years and period_years > 0:
-                cagr_pct = ((1.0 + (med_p / current_start)) ** (1.0 / period_years) - 1.0) * 100
-            else:
-                cagr_pct = None
 
             table_data.append(
                 {
@@ -283,7 +222,6 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                     "Risk of Ruin %": f"{int(ruins/10)}%",
                     "Median Drawdown": f"{m_dd*100:.1f}%",
                     "Median Profit ($ / % of Start)": f"${med_p:,.0f} / {ret_pct:.1f}%",
-                    "Annualized Return (CAGR)": (f"{cagr_pct:.1f}%" if cagr_pct is not None else "—"),
                     "Worst Case (1st %-tile)": f"${worst_case:,.0f}",
                     "Efficiency (Ret/DD)": round((med_p/current_start)/m_dd, 2) if m_dd > 0 else 0,
                     "Prob > 0": f"{int(sum(1 for p in profits if p > 0)/10)}%",
@@ -363,12 +301,13 @@ with st.expander("🔍 Understanding the Metrics"):
     The 'middle' drawdown experienced across 1,000 lives. While your strategy might have a historical drawdown of 15%, the Monte Carlo might show a median of 22%. This is the 'Reality Gap'—preparing you for the sequence of trades you *haven't* seen yet.
 
     ### **Worst Case (1st Percentile)**
-    This shows the profit/loss of the unluckiest 1% of simulated runs. If your 'Worst Case' is -$20,000 and your Start Equity is only $15,000, the math says you have a structural risk of total loss.
+    This shows the profit/loss of the unluckiest 1% of simulated runs.
 
     ### **Efficiency (Ret/DD Ratio)**
-    Also known as the **MAR Ratio**. This measures your return per unit of pain.
-    * **> 1.0:** Excellent. You are making more than the risk you are taking.
-    * **< 0.5:** High friction. You are enduring a lot of 'pain' for every dollar of 'gain.'
+    This is (Return as a fraction of start equity) divided by (Drawdown as a fraction of peak). It is a “return per unit of pain” metric over the pasted trade list.
+
+    ### **Median Profit ($ / % of Start)**
+    This is the median profit across 1,000 simulations expressed in dollars and as a percent of starting equity over the pasted trade list (N trades).
     """
     )
 
@@ -379,7 +318,7 @@ with st.expander("📈 Reading the Visuals"):
     The dark blue line is your **Median Path**. The shaded area is the **90% Confidence Interval**. If the bottom of that shaded area touches your red Ruin line, your strategy is 'flying too low to the ground.'
 
     ### **The Destination (Histogram)**
-    This shows the distribution of ending balances. A 'fat' tail to the left means your strategy has 'Left Tail Risk' (large, infrequent losses). A 'tight' cluster means your results are highly predictable.
+    This shows the distribution of ending balances.
     """
     )
 
