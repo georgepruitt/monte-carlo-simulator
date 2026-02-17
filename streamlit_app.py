@@ -167,6 +167,18 @@ period_years_override = st.sidebar.number_input(
 if period_years_override and period_years_override > 0:
     period_years = float(period_years_override)
 
+# --- Date-span debug (helps diagnose "Annual Return = —") ---
+if start_date_text.strip() or end_date_text.strip():
+    st.sidebar.caption(
+        f"Parsed dates: {start_date if start_date else '—'} to {end_date if end_date else '—'}"
+        + (f"  |  Years: {period_years:.2f}" if period_years and period_years > 0 else "")
+    )
+    if (start_date is None) or (end_date is None):
+        st.sidebar.warning(
+            "Annual Return will show '—' until BOTH dates parse. "
+            "Try formats like 11/30/2006 or 11-30-2006 (no extra characters)."
+        )
+
 st.sidebar.markdown("---")
 raw_text = st.sidebar.text_area(
     "Paste Trades (Column of P/L)",
