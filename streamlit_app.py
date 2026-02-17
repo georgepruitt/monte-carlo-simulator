@@ -412,23 +412,6 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             )
 
         st.subheader("⚖️ Efficiency Cloud (Pain vs. Gain)")
-        st.markdown(
-            """
-**How to read this chart (in plain English):**
-
-- Each dot is **one simulated year** (one “life”).
-- **Left → Right (Pain):** the **maximum drawdown** during that simulation. Farther right means a deeper worst dip.
-- **Down → Up (Gain):** the **net profit** at the end of the simulation.
-
-**What you want:** most dots in the **upper-left** (good profit with small drawdown).
-
-The dotted lines are the **medians**:
-- Left of the vertical line = better-than-typical drawdown.
-- Above the horizontal line = better-than-typical profit.
-
-So the **best quadrant** is **upper-left**.
-"""
-        )
         fig3, ax3 = plt.subplots(figsize=(10, 4))
         net_profits = [e - base_equity for e in final_equities]
         ax3.scatter(base_dds, net_profits, alpha=0.2, s=8, c="purple")
@@ -462,6 +445,12 @@ with st.expander("🔍 Understanding the Metrics"):
     Also known as the **MAR Ratio**. This measures your return per unit of pain.
     * **> 1.0:** Excellent. You are making more than the risk you are taking.
     * **< 0.5:** High friction. You are enduring a lot of 'pain' for every dollar of 'gain.'
+
+    ### **Prob > 0**
+    The percentage of simulation runs that finish with a **positive net profit** (ending balance above the starting equity).
+    * **100%** means every run ended profitable (given the pasted trade distribution).
+    * **60%** means 40% of runs ended negative.
+    
     """
     )
 
@@ -473,6 +462,19 @@ with st.expander("📈 Reading the Visuals"):
 
     ### **The Destination (Histogram)**
     This shows the distribution of ending balances. A 'fat' tail to the left means your strategy has 'Left Tail Risk' (large, infrequent losses). A 'tight' cluster means your results are highly predictable.
+
+    ### **Efficiency Cloud (Pain vs. Gain)**
+    - Each dot is **one simulation run** (one “life”).
+    - **Left → Right (Pain):** the **maximum drawdown** during that run. Farther right means a deeper worst dip.
+    - **Down → Up (Gain):** the **net profit** at the end of the run.
+
+    **What you want:** most dots in the **upper-left** (good profit with small drawdown).
+
+    The dotted lines are the **medians**:
+    - Left of the vertical line = better-than-typical drawdown.
+    - Above the horizontal line = better-than-typical profit.
+
+    So the **best quadrant** is **upper-left**.
     """
     )
 
