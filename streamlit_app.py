@@ -54,7 +54,14 @@ end_date_text = col_d2.text_input(
 )
 
 def _parse_mmddyyyy(s: str):
-    """Parse user-pasted dates like 11/30/2006 (tolerates extra spaces and trailing time)."""
+    """Parse user-entered dates.
+
+    Accepts:
+      - MM/DD/YYYY or M/D/YYYY
+      - MM/DD/YY (2-digit year)
+      - also tolerates '-', '.', '\' as separators
+      - tolerates trailing time (keeps first token)
+    """
     s = (s or "")
     # normalize whitespace (handles non-breaking spaces from Excel copy/paste)
     s = s.replace(" ", " ").strip()
@@ -64,7 +71,9 @@ def _parse_mmddyyyy(s: str):
     # If a full datetime was pasted (e.g., '11/30/2006 12:00:00 AM'), keep only the first token.
     s = s.split()[0].strip()
 
-    # Accept M/D/YYYY, MM/DD/YYYY, and also 2-digit years (MM/DD/YY)
+    # Normalize common separators to '/'
+    s = s.replace("-", "/").replace(".", "/").replace("\", "/")
+
     m = re.fullmatch(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})", s)
     if not m:
         return None
@@ -73,7 +82,7 @@ def _parse_mmddyyyy(s: str):
     dd = int(m.group(2))
     yy = int(m.group(3))
 
-    # Expand 2-digit years (TradeStation/Excel sometimes shows YY)
+    # Expand 2-digit years
     if yy < 100:
         yy = 2000 + yy if yy <= 69 else 1900 + yy
 
@@ -83,16 +92,29 @@ def _parse_mmddyyyy(s: str):
     except ValueError:
         return None
 
+
+def _looks_complete_date(s: str) -> bool:
+    """Avoid flashing errors while the user is still typing."""
+    s = (s or "").replace(" ", " ").strip()
+    if not s:
+        return False
+    # treat as 'complete enough' if it has 2 separators and at least 6 digits total
+    s2 = s.split()[0]
+    seps = sum(1 for ch in s2 if ch in "/-.")
+    digits = sum(1 for ch in s2 if ch.isdigit())
+    return seps >= 2 and digits >= 6
+
 start_date = _parse_mmddyyyy(start_date_text)
 end_date = _parse_mmddyyyy(end_date_text)
 
 period_years: float | None = 0.0
 _date_error = False
 if start_date_text.strip() or end_date_text.strip():
-    if start_date is None:
+    # Only show errors once the input looks complete; avoids error spam while typing.
+    if _looks_complete_date(start_date_text) and start_date is None:
         col_d1.error("Use MM/DD/YYYY")
         _date_error = True
-    if end_date is None:
+    if _looks_complete_date(end_date_text) and end_date is None:
         col_d2.error("Use MM/DD/YYYY")
         _date_error = True
 
