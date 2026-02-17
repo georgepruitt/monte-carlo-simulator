@@ -4,6 +4,8 @@ import pandas as pd
 import re
 import matplotlib.pyplot as plt
 
+from datetime import datetime, date
+
 # --- Page Config (This sets the browser tab title) ---
 st.set_page_config(page_title="Monte Carlo Trade Flight Simulator", layout="wide")
 
@@ -53,7 +55,11 @@ end_date_text = col_d2.text_input(
     placeholder="11/30/2024",
 )
 
-def _parse_mmddyyyy(s: str):
+# --- Date parsing helpers ---
+DATE_TOKEN_RE = re.compile(r"([0-9]{1,2}[\-/\.][0-9]{1,2}[\-/\.][0-9]{2,4})")
+
+
+def _parse_mmddyyyy(s: str) -> date | None:
     """Parse a user-entered date in common TradeStation/Excel formats.
 
     Accepts (manual typing or paste):
@@ -72,44 +78,36 @@ def _parse_mmddyyyy(s: str):
     # Normalize odd whitespace (Excel/non-breaking spaces)
     s = s.replace(chr(160), " ").strip()
 
-    # Normalize separators and strip any trailing time
-    s = s.replace("-", "/").replace(".", "/").replace(chr(92), "/")
-
-    import re
-    m = re.search(r"([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})", s)
+    # If a full datetime was pasted, pull out the first date-like token
+    m = DATE_TOKEN_RE.search(s)
     if not m:
         return None
 
     ds = m.group(1)
 
-    from datetime import datetime
+    # Normalize separators to '/'
+    ds = ds.replace("-", "/").replace(".", "/").replace("\\", "/")
+
+    # Try strict parsing first
     for fmt in ("%m/%d/%Y", "%m/%d/%y"):
         try:
             return datetime.strptime(ds, fmt).date()
         except ValueError:
             continue
-    return None
 
-    # If a full datetime was pasted (e.g., '11/30/2006 12:00:00 AM'), keep only the first token.
-    s = s.split()[0].strip()
-
-    # Normalize common separators to '/'
-    s = s.replace("-", "/").replace(".", "/").replace("\\", "/")  # normalize separators
-
-    m = re.fullmatch(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})", s)
-    if not m:
+    # Fallback: manual parse + 2-digit year expansion
+    m2 = re.fullmatch(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})", ds)
+    if not m2:
         return None
 
-    mm = int(m.group(1))
-    dd = int(m.group(2))
-    yy = int(m.group(3))
+    mm = int(m2.group(1))
+    dd = int(m2.group(2))
+    yy = int(m2.group(3))
 
-    # Expand 2-digit years
     if yy < 100:
         yy = 2000 + yy if yy <= 69 else 1900 + yy
 
     try:
-        from datetime import date
         return date(yy, mm, dd)
     except ValueError:
         return None
@@ -117,7 +115,7 @@ def _parse_mmddyyyy(s: str):
 
 def _looks_complete_date(s: str) -> bool:
     """Avoid flashing errors while the user is still typing."""
-    s = (s or "").replace(" ", " ").strip()
+    s = (s or "").replace("\u00a0", " ").strip()
     if not s:
         return False
     # treat as 'complete enough' if it has 2 separators and at least 6 digits total
@@ -126,11 +124,14 @@ def _looks_complete_date(s: str) -> bool:
     digits = sum(1 for ch in s2 if ch.isdigit())
     return seps >= 2 and digits >= 6
 
+
 start_date = _parse_mmddyyyy(start_date_text)
 end_date = _parse_mmddyyyy(end_date_text)
 
-period_years: float | None = 0.0
+# IMPORTANT: default None (truly optional) - not 0.0
+period_years: float | None = None
 _date_error = False
+
 if start_date_text.strip() or end_date_text.strip():
     # Only show errors once the input looks complete; avoids error spam while typing.
     if _looks_complete_date(start_date_text) and start_date is None:
@@ -140,6 +141,7 @@ if start_date_text.strip() or end_date_text.strip():
         col_d2.error("Use MM/DD/YYYY")
         _date_error = True
 
+# Only compute years when BOTH dates are valid
 if (start_date is not None) and (end_date is not None) and not _date_error:
     if end_date < start_date:
         st.sidebar.error("Last trade date must be on/after the first trade date.")
@@ -151,10 +153,10 @@ if (start_date is not None) and (end_date is not None) and not _date_error:
 
 # Show what we parsed (prevents silent em-dashes)
 if start_date_text.strip() or end_date_text.strip():
+    years_txt = f"{period_years:.2f}" if isinstance(period_years, float) else "—"
     st.sidebar.caption(
         f"Parsed dates → start: {start_date if start_date else 'INVALID'} | "
-        f"end: {end_date if end_date else 'INVALID'} | "
-        f"years: {f'{period_years:.2f}' if isinstance(period_years, float) else '—'}"
+        f"end: {end_date if end_date else 'INVALID'} | years: {years_txt}"
     )
 
 # Optional manual override (rare): if your trade list spans gaps or you prefer a fixed period.
@@ -166,18 +168,6 @@ period_years_override = st.sidebar.number_input(
 )
 if period_years_override and period_years_override > 0:
     period_years = float(period_years_override)
-
-# --- Date-span debug (helps diagnose "Annual Return = —") ---
-if start_date_text.strip() or end_date_text.strip():
-    st.sidebar.caption(
-        f"Parsed dates: {start_date if start_date else '—'} to {end_date if end_date else '—'}"
-        + (f"  |  Years: {period_years:.2f}" if period_years and period_years > 0 else "")
-    )
-    if (start_date is None) or (end_date is None):
-        st.sidebar.warning(
-            "Annual Return will show '—' until BOTH dates parse. "
-            "Try formats like 11/30/2006 or 11-30-2006 (no extra characters)."
-        )
 
 st.sidebar.markdown("---")
 raw_text = st.sidebar.text_area(
@@ -404,9 +394,14 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
 
             # Annual return based on actual date span (if provided)
             if isinstance(period_years, float) and period_years > 0:
-                annual_return_pct = ((1.0 + (med_p / current_start)) ** (1.0 / period_years) - 1.0) * 100
+                # Guard against pathological cases (shouldn't happen with positive equity)
+                gross = 1.0 + (med_p / current_start) if current_start != 0 else None
+                if (gross is not None) and (gross > 0) and (current_start > 0):
+                    annual_return_pct = (gross ** (1.0 / period_years) - 1.0) * 100
+                else:
+                    annual_return_pct = None
             elif (start_date_text.strip() or end_date_text.strip()) and _date_error:
-                annual_return_pct = float('nan')
+                annual_return_pct = float("nan")
             else:
                 annual_return_pct = None
 
@@ -417,11 +412,16 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                     "Median Drawdown": f"{m_dd*100:.1f}%",
                     "Median Profit ($ / % of Start)": f"${med_p:,.0f} / {ret_pct:.1f}%",
                     "Annual Return (%/yr)": (
-                        f"{annual_return_pct:.1f}%" if isinstance(annual_return_pct, float) and not np.isnan(annual_return_pct)
-                        else ("Invalid date(s)" if isinstance(annual_return_pct, float) and np.isnan(annual_return_pct) else "—")
+                        f"{annual_return_pct:.1f}%"
+                        if isinstance(annual_return_pct, float) and not np.isnan(annual_return_pct)
+                        else (
+                            "Invalid date(s)"
+                            if isinstance(annual_return_pct, float) and np.isnan(annual_return_pct)
+                            else "—"
+                        )
                     ),
                     "Worst Case (1st %-tile)": f"${worst_case:,.0f}",
-                    "Efficiency (Ret/DD)": round((med_p/current_start)/m_dd, 2) if m_dd > 0 else 0,
+                    "Efficiency (Ret/DD)": round((med_p / current_start) / m_dd, 2) if m_dd > 0 else 0,
                     "Prob > 0": f"{round(100.0 * sum(1 for p in profits if p > 0) / len(profits), 1)}%",
                 }
             )
@@ -515,7 +515,7 @@ with st.expander("🔍 Understanding the Metrics"):
     The percentage of simulation runs that finish with a **positive net profit** (ending balance above the starting equity).
     * **100%** means every run ended profitable (given the pasted trade distribution).
     * **60%** means 40% of runs ended negative.
-    
+
     """
     )
 
