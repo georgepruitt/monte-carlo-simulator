@@ -248,6 +248,37 @@ def clean_data(text: str) -> list[float]:
         # Use the rightmost numeric as P/L
         cleaned.append(values[-1][1])
 
+    # --- Post-pass: detect TradeStation "Net Profit - Cum Net Profit" alternating pattern ---
+    # When users copy that column, it often pastes as:
+    #   net1
+    #   cum1
+    #   net2
+    #   cum2
+    #   ...
+    # If we detect that, keep only the net values (even indices).
+    def _looks_like_alt_net_cum(seq: list[float]) -> bool:
+        if len(seq) < 6:
+            return False
+        if len(seq) % 2 != 0:
+            return False
+        cum = 0.0
+        matches = 0
+        pairs = 0
+        for i in range(0, len(seq), 2):
+            net = seq[i]
+            target_cum = seq[i + 1]
+            cum += net
+            # Tolerance: allow a little rounding noise
+            tol = max(1.0, 0.01 * abs(cum))
+            if abs(cum - target_cum) <= tol:
+                matches += 1
+            pairs += 1
+        # If most pairs match the cumulative relationship, call it.
+        return pairs > 0 and (matches / pairs) >= 0.8
+
+    if _looks_like_alt_net_cum(cleaned):
+        cleaned = cleaned[0::2]
+
     return cleaned
 
 
