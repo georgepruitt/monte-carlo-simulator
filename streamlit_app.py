@@ -54,19 +54,41 @@ end_date_text = col_d2.text_input(
 )
 
 def _parse_mmddyyyy(s: str):
-    """Parse user-entered dates.
+    """Parse a user-entered date in common TradeStation/Excel formats.
 
-    Accepts:
-      - MM/DD/YYYY or M/D/YYYY
-      - MM/DD/YY (2-digit year)
-      - also tolerates '-', '.', '\' as separators
-      - tolerates trailing time (keeps first token)
+    Accepts (manual typing or paste):
+      - 11/30/2006
+      - 11/30/06
+      - 11-30-2006
+      - 11.30.2006
+      - 11/30/2006 12:00:00 AM
+
+    Returns a datetime.date or None.
     """
-    s = (s or "")
-    # normalize whitespace (handles non-breaking spaces from Excel copy/paste)
-    s = s.replace(" ", " ").strip()
+    s = (s or "").strip()
     if not s:
         return None
+
+    # Normalize odd whitespace (Excel/non-breaking spaces)
+    s = s.replace(chr(160), " ").strip()
+
+    # Normalize separators and strip any trailing time
+    s = s.replace("-", "/").replace(".", "/").replace(chr(92), "/")
+
+    import re
+    m = re.search(r"([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})", s)
+    if not m:
+        return None
+
+    ds = m.group(1)
+
+    from datetime import datetime
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(ds, fmt).date()
+        except ValueError:
+            continue
+    return None
 
     # If a full datetime was pasted (e.g., '11/30/2006 12:00:00 AM'), keep only the first token.
     s = s.split()[0].strip()
