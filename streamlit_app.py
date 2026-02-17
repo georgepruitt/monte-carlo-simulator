@@ -41,33 +41,49 @@ ruin_level = float(base_equity) * (float(ruin_pct) / 100.0)
 st.sidebar.caption(f"Ruin line = ${ruin_level:,.0f}")
 
 # Optional: used only to annualize returns (CAGR).
-# Your users can copy/paste dates in this format: 11/30/2006
 st.sidebar.markdown("**Optional: Annualize using first/last trade dates**")
 col_d1, col_d2 = st.sidebar.columns(2)
 start_date_text = col_d1.text_input(
-    "First trade date (MM/DD/YYYY)",
+    "First trade date (paste from Excel)",
     value="",
     placeholder="11/30/2006",
 )
 end_date_text = col_d2.text_input(
-    "Last trade date (MM/DD/YYYY)",
+    "Last trade date (paste from Excel)",
     value="",
     placeholder="11/30/2024",
 )
 
 # --- Date parsing helpers ---
-DATE_TOKEN_RE = re.compile(r"([0-9]{1,2}[\-/\.][0-9]{1,2}[\-/\.][0-9]{2,4})")
+# Excel paste reality:
+# - If the cell is formatted as a date, paste is usually: 11/30/2006
+# - If it includes time: 11/30/2006 12:00:00 AM
+# - If the cell is General/Number, Excel may paste the SERIAL: 39047
+# - Some exports paste ISO: 2006-11-30
+
+DATE_TOKEN_RE = re.compile(
+    r"(\d{1,2}[\-/\.]\d{1,2}[\-/\.]\d{2,4}|\d{4}[\-/\.]\d{1,2}[\-/\.]\d{1,2}|\d{5,6})"
+)
 
 
-def _parse_mmddyyyy(s: str) -> date | None:
-    """Parse a user-entered date in common TradeStation/Excel formats.
+def _excel_serial_to_date(n: int) -> date | None:
+    """Convert Excel serial date (Windows) to datetime.date."""
+    try:
+        base = datetime(1899, 12, 30)  # common Excel epoch used by pandas too
+        return (base + pd.to_timedelta(int(n), unit="D")).date()
+    except Exception:
+        return None
 
-    Accepts (manual typing or paste):
-      - 11/30/2006
-      - 11/30/06
-      - 11-30-2006
-      - 11.30.2006
+
+def _parse_excelish_date(s: str) -> date | None:
+    """Parse a user-entered date copied from Excel/TradeStation.
+
+    Accepts:
+      - 11/30/2006, 11/30/06
+      - 11-30-2006, 11.30.2006
       - 11/30/2006 12:00:00 AM
+      - 2006-11-30 (ISO)
+      - 39047 (Excel serial)
 
     Returns a datetime.date or None.
     """
@@ -76,40 +92,40 @@ def _parse_mmddyyyy(s: str) -> date | None:
         return None
 
     # Normalize odd whitespace (Excel/non-breaking spaces)
-    s = s.replace(chr(160), " ").strip()
+    s = s.replace("\u00a0", " ").strip()
 
-    # If a full datetime was pasted, pull out the first date-like token
+    # Grab first likely token (date/iso/serial)
     m = DATE_TOKEN_RE.search(s)
     if not m:
         return None
 
-    ds = m.group(1)
+    tok = m.group(1).strip()
 
-    # Normalize separators to '/'
-    ds = ds.replace("-", "/").replace(".", "/").replace("\\", "/")
+    # Excel serial?
+    if tok.isdigit() and len(tok) >= 5:
+        n = int(tok)
+        if 1 <= n <= 110000:
+            d = _excel_serial_to_date(n)
+            if d is not None:
+                return d
 
-    # Try strict parsing first
-    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+    # Normalize separators
+    ds = tok.replace("-", "/").replace(".", "/").replace("\\", "/")
+
+    # Common strict formats
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d"):
         try:
             return datetime.strptime(ds, fmt).date()
         except ValueError:
             continue
 
-    # Fallback: manual parse + 2-digit year expansion
-    m2 = re.fullmatch(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})", ds)
-    if not m2:
-        return None
-
-    mm = int(m2.group(1))
-    dd = int(m2.group(2))
-    yy = int(m2.group(3))
-
-    if yy < 100:
-        yy = 2000 + yy if yy <= 69 else 1900 + yy
-
+    # Last resort: let pandas try
     try:
-        return date(yy, mm, dd)
-    except ValueError:
+        dt = pd.to_datetime(tok, errors="coerce")
+        if pd.isna(dt):
+            return None
+        return dt.date()
+    except Exception:
         return None
 
 
@@ -118,30 +134,24 @@ def _looks_complete_date(s: str) -> bool:
     s = (s or "").replace("\u00a0", " ").strip()
     if not s:
         return False
-    # treat as 'complete enough' if it has 2 separators and at least 6 digits total
-    s2 = s.split()[0]
-    seps = sum(1 for ch in s2 if ch in "/-.")
-    digits = sum(1 for ch in s2 if ch.isdigit())
-    return seps >= 2 and digits >= 6
+    digits = sum(1 for ch in s if ch.isdigit())
+    return digits >= 5
 
 
-start_date = _parse_mmddyyyy(start_date_text)
-end_date = _parse_mmddyyyy(end_date_text)
+start_date = _parse_excelish_date(start_date_text)
+end_date = _parse_excelish_date(end_date_text)
 
-# IMPORTANT: default None (truly optional) - not 0.0
 period_years: float | None = None
 _date_error = False
 
 if start_date_text.strip() or end_date_text.strip():
-    # Only show errors once the input looks complete; avoids error spam while typing.
     if _looks_complete_date(start_date_text) and start_date is None:
-        col_d1.error("Use MM/DD/YYYY")
+        col_d1.error("Paste a valid Excel date (or serial) — e.g., 11/30/2006")
         _date_error = True
     if _looks_complete_date(end_date_text) and end_date is None:
-        col_d2.error("Use MM/DD/YYYY")
+        col_d2.error("Paste a valid Excel date (or serial) — e.g., 11/30/2024")
         _date_error = True
 
-# Only compute years when BOTH dates are valid
 if (start_date is not None) and (end_date is not None) and not _date_error:
     if end_date < start_date:
         st.sidebar.error("Last trade date must be on/after the first trade date.")
@@ -151,7 +161,7 @@ if (start_date is not None) and (end_date is not None) and not _date_error:
         days = (end_date - start_date).days
         period_years = (days / 365.25) if days >= 1 else None
 
-# Show what we parsed (prevents silent em-dashes)
+# Show what we parsed
 if start_date_text.strip() or end_date_text.strip():
     years_txt = f"{period_years:.2f}" if isinstance(period_years, float) else "—"
     st.sidebar.caption(
@@ -159,7 +169,6 @@ if start_date_text.strip() or end_date_text.strip():
         f"end: {end_date if end_date else 'INVALID'} | years: {years_txt}"
     )
 
-# Optional manual override (rare): if your trade list spans gaps or you prefer a fixed period.
 period_years_override = st.sidebar.number_input(
     "Years (override) — optional",
     value=0.0,
@@ -210,21 +219,7 @@ def _token_to_float(tok: str) -> float | None:
 
 
 def clean_data(text: str) -> list[float]:
-    """
-    Robustly extract a column of P/L values from pasted text.
-
-    Handles:
-      - TradeStation exports where each row might be:  '1   $123.45'  (trade # + P/L)
-      - Parentheses negatives: '(123.45)'
-      - Commas, currency symbols
-      - Random extra columns (dates, symbols, etc.)
-
-    Strategy:
-      - For each line, extract numeric-looking tokens.
-      - If the first token is a small integer (often a trade # like 1,2,3,...) and there is another number,
-        drop that first token.
-      - Use the **rightmost remaining numeric token** as the P/L for that line.
-    """
+    """Robustly extract a column of P/L values from pasted text."""
     cleaned: list[float] = []
 
     for line in (text or "").splitlines():
@@ -233,7 +228,6 @@ def clean_data(text: str) -> list[float]:
             continue
 
         # If the line is just an integer (common when copying a Trade # column), skip it.
-        # This directly prevents the "454 trades becomes 908" problem.
         if s.isdigit():
             continue
 
@@ -246,7 +240,6 @@ def clean_data(text: str) -> list[float]:
         if not tokens:
             continue
 
-        # Convert all tokens we can
         values: list[tuple[str, float]] = []
         for tok in tokens:
             v = _token_to_float(tok)
@@ -259,27 +252,17 @@ def clean_data(text: str) -> list[float]:
         # If line looks like: trade_index + pnl (e.g., '1  250.00'), drop the index.
         if len(values) >= 2:
             first_tok, first_val = values[0]
-            # Heuristic: pure integer token, small-ish magnitude, and no sign/parentheses
             is_integer_token = re.fullmatch(r"\d+", first_tok.strip()) is not None
             looks_like_index = is_integer_token and 0 <= first_val <= 100000
             if looks_like_index:
-                # In particular, your prior bugbear: skip the leading '1'
                 values = values[1:]
 
         if not values:
             continue
 
-        # Use the rightmost numeric as P/L
         cleaned.append(values[-1][1])
 
-    # --- Post-pass: detect TradeStation "Net Profit - Cum Net Profit" alternating pattern ---
-    # When users copy that column, it often pastes as:
-    #   net1
-    #   cum1
-    #   net2
-    #   cum2
-    #   ...
-    # If we detect that, keep only the net values (even indices).
+    # Detect TradeStation alternating: net1, cum1, net2, cum2...
     def _looks_like_alt_net_cum(seq: list[float]) -> bool:
         if len(seq) < 6:
             return False
@@ -292,12 +275,10 @@ def clean_data(text: str) -> list[float]:
             net = seq[i]
             target_cum = seq[i + 1]
             cum += net
-            # Tolerance: allow a little rounding noise
             tol = max(1.0, 0.01 * abs(cum))
             if abs(cum - target_cum) <= tol:
                 matches += 1
             pairs += 1
-        # If most pairs match the cumulative relationship, call it.
         return pairs > 0 and (matches / pairs) >= 0.8
 
     if _looks_like_alt_net_cum(cleaned):
@@ -319,7 +300,6 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             msg += f"  Date span ≈ {period_years:.2f} years."
         st.sidebar.success(msg)
 
-        # --- Parse sanity check (helps users confirm negatives are being detected) ---
         neg_ct = sum(1 for x in trades if x < 0)
         pos_ct = sum(1 for x in trades if x > 0)
         zero_ct = len(trades) - neg_ct - pos_ct
@@ -341,7 +321,6 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                 "this usually means the paste did not include the losing rows (or the wrong column was pasted)."
             )
 
-        # Progress bar for web UX
         progress_bar = st.progress(0)
 
         increment = base_equity / 4
@@ -386,15 +365,11 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
 
             progress_bar.progress((step + 1) / 11)
 
-            # --- Calculations for Display ---
             med_p, m_dd = np.median(profits), np.median(dds)
             worst_case = np.percentile(profits, 1)
-            # Return over the simulation horizon (N trades)
             ret_pct = (med_p / current_start) * 100
 
-            # Annual return based on actual date span (if provided)
             if isinstance(period_years, float) and period_years > 0:
-                # Guard against pathological cases (shouldn't happen with positive equity)
                 gross = 1.0 + (med_p / current_start) if current_start != 0 else None
                 if (gross is not None) and (gross > 0) and (current_start > 0):
                     annual_return_pct = (gross ** (1.0 / period_years) - 1.0) * 100
@@ -415,9 +390,7 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                         f"{annual_return_pct:.1f}%"
                         if isinstance(annual_return_pct, float) and not np.isnan(annual_return_pct)
                         else (
-                            "Invalid date(s)"
-                            if isinstance(annual_return_pct, float) and np.isnan(annual_return_pct)
-                            else "—"
+                            "Invalid date(s)" if isinstance(annual_return_pct, float) and np.isnan(annual_return_pct) else "—"
                         )
                     ),
                     "Worst Case (1st %-tile)": f"${worst_case:,.0f}",
@@ -426,12 +399,10 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                 }
             )
 
-        # --- Display Table ---
         st.subheader("📊 Risk & Scaling Analysis")
         df = pd.DataFrame(table_data)
         st.table(df)
 
-        # --- Download Button ---
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
             "📥 Download Results as CSV",
@@ -440,7 +411,6 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             mime="text/csv",
         )
 
-        # --- Charts ---
         col1, col2 = st.columns(2)
 
         with col1:
@@ -489,7 +459,6 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
 else:
     st.info("👈 Enter your parameters and paste your trades in the sidebar, then click 'Run Flight Simulator'.")
 
-# --- Documentation Section ---
 st.markdown("---")
 st.header("📖 How to Interpret Your Flight Results")
 
