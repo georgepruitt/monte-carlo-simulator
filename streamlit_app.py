@@ -42,13 +42,32 @@ end_date_text = col_d2.text_input(
 )
 
 def _parse_mmddyyyy(s: str):
-    s = (s or "").strip()
+    """Parse user-pasted dates like 11/30/2006 (tolerates extra spaces and trailing time)."""
+    s = (s or "")
+    # normalize whitespace (handles non-breaking spaces from Excel copy/paste)
+    s = s.replace(" ", " ").strip()
     if not s:
         return None
+
+    # If a full datetime was pasted (e.g., '11/30/2006 12:00:00 AM'), keep only the first token.
+    s = s.split()[0].strip()
+
+    # Accept M/D/YYYY, MM/DD/YYYY, and also 2-digit years (MM/DD/YY)
+    m = re.fullmatch(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})", s)
+    if not m:
+        return None
+
+    mm = int(m.group(1))
+    dd = int(m.group(2))
+    yy = int(m.group(3))
+
+    # Expand 2-digit years (TradeStation/Excel sometimes shows YY)
+    if yy < 100:
+        yy = 2000 + yy if yy <= 69 else 1900 + yy
+
     try:
-        # Accept M/D/YYYY or MM/DD/YYYY
-        from datetime import datetime
-        return datetime.strptime(s, "%m/%d/%Y").date()
+        from datetime import date
+        return date(yy, mm, dd)
     except ValueError:
         return None
 
