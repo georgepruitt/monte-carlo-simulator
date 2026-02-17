@@ -24,7 +24,19 @@ Paste your trades and discover your true Risk of Ruin and Scaling potential.
 # --- Sidebar Inputs ---
 st.sidebar.header("Simulation Controls")
 base_equity = st.sidebar.number_input("Base Start Equity ($)", value=25000, step=1000)
-ruin_level = st.sidebar.number_input("Margin/Ruin Level ($)", value=5000, step=500)
+ruin_pct = st.sidebar.slider(
+    "Ruin threshold (% of Start Equity)",
+    min_value=0,
+    max_value=100,
+    value=60,
+    step=5,
+    help=(
+        "Defines 'ruin' as the account balance falling below this percent of the **starting equity**. "
+        "Example: Start=$25,000 and Ruin=60% → ruin line = $15,000."
+    ),
+)
+ruin_level = float(base_equity) * (float(ruin_pct) / 100.0)
+st.sidebar.caption(f"Ruin line = ${ruin_level:,.0f}")
 
 # Optional: used only to annualize returns (CAGR).
 # Your users can copy/paste dates in this format: 11/30/2006
@@ -357,7 +369,7 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
                 label="90% Range",
             )
             ax1.plot(range(n_trades + 1), p50, color="darkblue", lw=2, label="Median Path")
-            ax1.axhline(ruin_level, color="red", ls="--", label="Ruin Level")
+            ax1.axhline(ruin_level, color="red", ls="--", label=f"Ruin Line (${ruin_level:,.0f})")
             ax1.set_xlabel("Trade # (simulation step)")
             ax1.set_ylabel("Account Balance ($)")
             ax1.legend()
@@ -378,6 +390,23 @@ if st.sidebar.button("RUN FLIGHT SIMULATOR"):
             )
 
         st.subheader("⚖️ Efficiency Cloud (Pain vs. Gain)")
+        st.markdown(
+            """
+**How to read this chart (in plain English):**
+
+- Each dot is **one simulated year** (one “life”).
+- **Left → Right (Pain):** the **maximum drawdown** during that simulation. Farther right means a deeper worst dip.
+- **Down → Up (Gain):** the **net profit** at the end of the simulation.
+
+**What you want:** most dots in the **upper-left** (good profit with small drawdown).
+
+The dotted lines are the **medians**:
+- Left of the vertical line = better-than-typical drawdown.
+- Above the horizontal line = better-than-typical profit.
+
+So the **best quadrant** is **upper-left**.
+"""
+        )
         fig3, ax3 = plt.subplots(figsize=(10, 4))
         net_profits = [e - base_equity for e in final_equities]
         ax3.scatter(base_dds, net_profits, alpha=0.2, s=8, c="purple")
