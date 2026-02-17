@@ -72,7 +72,7 @@ def _parse_mmddyyyy(s: str):
     s = s.split()[0].strip()
 
     # Normalize common separators to '/'
-    s = s.replace("-", "/").replace(".", "/").replace("\", "/")
+    s = s.replace("-", "/").replace(".", "/").replace("\\", "/")  # normalize separators
 
     m = re.fullmatch(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})", s)
     if not m:
